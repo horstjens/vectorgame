@@ -99,15 +99,15 @@ class Flytext(pygame.sprite.Sprite):
 
 class VectorSprite(pygame.sprite.Sprite):
     """base class for sprites. this class inherits from pygames sprite class"""
-    #number = 0
+    number = 0
     #numbers = {} # { number, Sprite }
 
     def __init__(self, **kwargs):
         self._default_parameters(**kwargs)
         self._overwrite_parameters()
         pygame.sprite.Sprite.__init__(self, self.groups) #call parent class. NEVER FORGET !
-        #self.number = VectorSprite.number # unique number for each sprite
-        #VectorSprite.number += 1
+        self.number = VectorSprite.number # unique number for each sprite
+        VectorSprite.number += 1
         #VectorSprite.numbers[self.number] = self
         self.create_image()
         self.distance_traveled = 0 # in pixel
@@ -235,6 +235,8 @@ class VectorSprite(pygame.sprite.Sprite):
 
     def update(self, seconds):
         """calculate movement, position and bouncing on edge"""
+        self.age += seconds
+        self.distance_traveled += self.move.length() * seconds
         # ----- kill because... ------
         if self.hitpoints <= 0:
             self.kill()
@@ -249,8 +251,6 @@ class VectorSprite(pygame.sprite.Sprite):
         else:
              # move independent of boss
              self.pos += self.move * seconds
-             self.distance_traveled += self.move.length() * seconds
-             self.age += seconds
              self.wallcheck()
         self.rect.center = ( round(self.pos.x, 0), round(self.pos.y, 0) )
 
@@ -259,7 +259,7 @@ class VectorSprite(pygame.sprite.Sprite):
         # ------- left edge ----
         if self.pos.x < 0:
             if self.stop_on_edge:
-                self.x = 0
+                self.pos.x = 0
             if self.kill_on_edge:
                 self.kill()
             if self.bounce_on_edge:
@@ -268,13 +268,14 @@ class VectorSprite(pygame.sprite.Sprite):
             if self.warp_on_edge:
                 self.pos.x = Viewer.width
         # -------- upper edge -----
-        if self.pos.y  < 0:
+        # hud on top screen edge = 20 pixel = Viewer.hud_height
+        if self.pos.y  < Viewer.hud_height:
             if self.stop_on_edge:
-                self.y = 0
+                self.pos.y = Viewer.hud_height
             if self.kill_on_edge:
                 self.kill()
             if self.bounce_on_edge:
-                self.pos.y = 0
+                self.pos.y = Viewer.hud_height
                 self.move.y *= -1
             if self.warp_on_edge:
                 self.pos.y = Viewer.height
@@ -308,7 +309,8 @@ class Beam(VectorSprite):
     def _overwrite_parameters(self):
         self.kill_on_edge = True
         self._layer = 7
-        self.max_age = 5 
+        self.max_age = 5
+        self.damage = 1
 
 
     def create_image(self):
@@ -330,24 +332,77 @@ class Beam(VectorSprite):
 
 
 class Player(VectorSprite):
+    aims = ["forward", "free", "closest", "fix", "locked" ]
 
     def _overwrite_parameters(self):
+        self.hitpoints = 500
+        self.hitpointsfull = 500
         self.stop_on_edge = True
         self.turnspeed = 90 # degrees per second
         self.movespeed = 150 # pixel per second
         self.friction = 0.99
         self.cannon_angle = 0
         self.firespeed = 150
-        self.cannon_turn_speed = 90 # degrees per second
+        #if self.number == 0:
+        #    self.aiming = "locked"
+        #    self.victim_number = 1
+        #else:
+        #self.victim = None
+        self.aiming = "free"  #
+        self.reload_time = 0.15 # minimal time between 2 shots
+        self.last_button1 = 0
+        self.button1_wait = 0.35
+        self.last_shot = 0 # time of last shot
+        self.cannon_turn_speed = 150 # degrees per second
+
         Crosshair(boss=self)
 
+    def switch_firemode(self):
+        if self.age < (self.last_button1 + self.button1_wait):
+            return # too soon
+        if self.aiming == "free":
+            self.aiming = "forward"
+        elif self.aiming == "forward":
+            self.aiming = "fixed"
+        elif self.aiming == "fixed":
+            self.aiming = "free"
+
+
+    def fire(self):
+        if self.age < (self.last_shot + self.reload_time):
+            return # gun is too hot now, wait for cooldown
+        self.last_shot = self.age
+        m = pygame.math.Vector2(self.firespeed, 0)
+        m.rotate_ip(self.cannon_angle)
+        m += self.move
+        p = pygame.math.Vector2(self.pos.x, self.pos.y)
+        a = self.cannon_angle
+        Beam(boss=self, pos=p, move=m, color=self.color, angle=a)
+
     def turn_left(self, seconds, factor=1):
-        degrees = self.turnspeed * factor * seconds
-        self.rotate(-degrees)
+        self.turn(seconds, factor, -1)
 
     def turn_right(self, seconds, factor=1):
-        degrees = self.turnspeed * factor * seconds
+        self.turn(seconds, factor, 1)
+
+    def turn(self, seconds, factor, clockwise=1 ):
+        """clockwise can be 1 or -1 (=counter-clockwise)"""
+        degrees = self.turnspeed * factor * seconds * clockwise
         self.rotate(degrees)
+        # rotate the crosshair as well?
+        if self.aiming == "free":
+            return
+        elif self.aiming == "forward":
+            self.cannon_angle = self.angle
+        elif self.aiming == "fix":
+            self.cannon_angle += degrees
+        elif self.aiming == "locked":
+            victim = Viewer.players[self.victim_number]
+            b = self.pos - victim.pos
+            a = b.angle_to(pygame.math.Vector2(1,0))
+            self.cannon_angle = a
+
+
 
     def move_forward(self, factor=1):
         self.move = pygame.math.Vector2(self.movespeed * factor, 0)
@@ -398,7 +453,9 @@ class Crosshair(VectorSprite):
 class Viewer():
     width = 0
     height = 0
+    hud_height = 20 # height of hud on top of screen, for displaying hitpoints etc
     allgroup = None # pygame sprite Group for all sprites
+    players = []
 
     def __init__(self,width=800, height=600 ):
         Viewer.width = width
@@ -418,7 +475,7 @@ class Viewer():
         self.backgroundfilenames = []  # every .jpg or .jpeg file in the folder 'data'
         self.make_background()
         self.prepare_sprites()
-        self.players = []
+        Viewer.players = []
         # --- create 4 player sprites ---
         corners = [(100,100), (Viewer.width-100,100), (100, Viewer.height-100), (Viewer.width-100, Viewer.height-100)]
         colors = [(0,0,222), (0,222,0), (222,0,0), (222,222,0)]
@@ -429,10 +486,10 @@ class Viewer():
 
         self.run()
 
-    def create_picture(self, color=(0,0,255)):
+    def create_picture(self, color=(0,0,255), size=35):
         # create 1 pictures of a spaceship, pointing to right
-        pic = pygame.Surface((100,100))
-        pygame.draw.polygon(pic, color, [(0,20), (100,50), (0, 80), (30,50)])
+        pic = pygame.Surface((size, size))
+        pygame.draw.polygon(pic, color, [(0,0), (size,size//2), (0, size), (size//3,size//2)])
         pic.set_colorkey((0,0,0))
         pic.convert_alpha()
         return pic
@@ -478,6 +535,16 @@ class Viewer():
 
         # ------ player1,2,3: mouse, keyboard, joystick ---
 
+    def hud(self):
+        """make a Head Up Display on the top of the screen with bars for player hitpoints"""
+        y = Viewer.hud_height
+        for nr, p in enumerate(self.players):
+            percent = p.hitpoints / p.hitpointsfull
+            length = Viewer.width // 4
+            pygame.draw.rect(self.screen, p.color, (nr * length +1 , 1 , int(length * percent)-2, y-1), 0) # fill
+            pygame.draw.rect(self.screen, (0, 0, 0), (nr * length, 0, length, y), 1)  # black border
+            write(background=self.screen, text=p.aiming, x= nr*length + 50, y=5,
+                  color=(0,0,0), bold=True, font_size=10)
 
     def run(self):
         """The mainloop"""
@@ -487,6 +554,7 @@ class Viewer():
         pygame.display.set_caption("use joysticks or cursor/pgup/pdwn/space")
         # exittime = 0
         while running:
+            print(self.players[0].pos)
             milliseconds = self.clock.tick(self.fps)  #
             seconds = milliseconds / 1000
             self.playtime += seconds
@@ -499,12 +567,7 @@ class Viewer():
                     if event.key == pygame.K_ESCAPE:
                         running = False
                     if event.key == pygame.K_SPACE:
-                        m = pygame.math.Vector2(self.players[0].firespeed, 0)
-                        m.rotate_ip(self.players[0].cannon_angle)
-                        m += self.players[0].move
-                        p = pygame.math.Vector2(self.players[0].pos.x, self.players[0].pos.y)
-                        a = self.players[0].cannon_angle
-                        Beam(boss=self.players[0], pos=p, move=m, color=self.players[0].color, angle=a )
+                      self.players[0].fire()
 
             # ------------ pressed keys ------
             pressed_keys = pygame.key.get_pressed()
@@ -539,6 +602,9 @@ class Viewer():
                     buttons = j.get_numbuttons()
                     for b in range(buttons):
                         pushed = j.get_button(b)
+                        if b == 0 and pushed:
+                            self.players[number].switch_firemode()
+
                     # ----- control 4 players with 4 joysticks
                     if x < 0:
                         self.players[number].turn_left(seconds, abs(x))
@@ -555,12 +621,13 @@ class Viewer():
 
             # permanent fire for all players
             for nr, player in enumerate(self.players):
-                m = pygame.math.Vector2(player.firespeed, 0)
-                m.rotate_ip(player.cannon_angle)
-                m += player.move
-                p = pygame.math.Vector2(player.pos.x, player.pos.y)
-                a = player.cannon_angle
-                Beam(boss=player, pos=p, move=m, color=player.color, angle=a)
+                player.fire()
+                #m = pygame.math.Vector2(player.firespeed, 0)
+                #m.rotate_ip(player.cannon_angle)
+                #m += player.move
+                #p = pygame.math.Vector2(player.pos.x, player.pos.y)
+                #a = player.cannon_angle
+                #Beam(boss=player, pos=p, move=m, color=player.color, angle=a)
 
 
 
@@ -587,7 +654,7 @@ class Viewer():
 
             # ----------- clear, draw , update, flip -----------------
             self.allgroup.draw(self.screen)
-
+            self.hud()
             # -------- next frame -------------
             pygame.display.flip()
         # -----------------------------------------------------
