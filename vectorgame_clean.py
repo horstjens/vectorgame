@@ -332,7 +332,6 @@ class Beam(VectorSprite):
 
 
 class Player(VectorSprite):
-    aims = ["forward", "free", "closest", "fix", "locked" ]
 
     def _overwrite_parameters(self):
         self.hitpoints = 500
@@ -366,6 +365,18 @@ class Player(VectorSprite):
         elif self.aiming == "forward":
             self.aiming = "fixed"
         elif self.aiming == "fixed":
+            self.aiming = "closest"
+            self.aim_at_closest_player()
+        elif self.aiming == "closest":
+            self.aiming = "locked 1"
+            self.aim_at_player(1)
+        elif self.aiming == "locked 1":
+            self.aiming = "locked 2"
+            self.aim_at_player(2)
+        elif self.aiming == "locked 2":
+            self.aiming = "locked 3"
+            self.aim_at_player(3)
+        elif self.aiming == "locked 3":
             self.aiming = "free"
 
 
@@ -403,11 +414,7 @@ class Player(VectorSprite):
             self.cannon_angle = self.angle
         elif self.aiming == "fixed":
             self.cannon_angle += degrees
-        elif self.aiming == "locked":
-            victim = Viewer.players[self.victim_number]
-            b = self.pos - victim.pos
-            a = b.angle_to(pygame.math.Vector2(1,0))
-            self.cannon_angle = a
+
 
 
 
@@ -422,8 +429,43 @@ class Player(VectorSprite):
         m.rotate_ip(self.angle)
         self.move += m
 
+    def aim_at_player(self, number):
+        targets = [p for p in Viewer.players if p != self]
+        best = targets[number-1]
+        v = best.pos - self.pos
+        a = -v.angle_to(pygame.math.Vector2(1, 0))
+        self.cannon_angle = a
+
+    def aim_at_closest_player(self):
+        targets = [p for p in Viewer.players if p != self]
+        best_distance = None
+        #best = None
+        for p in targets:
+            dist = (p.pos - self.pos).length()
+            if best_distance is None or best_distance > dist:
+                best_distance = dist
+                best = p
+        v =   best.pos - self.pos
+        a = -v.angle_to(pygame.math.Vector2(1,0))
+        self.cannon_angle = a
+        #if self.playernumber== 0:
+        #    print(best_distance, best, v, a)
+
+
+
+
+
     def update(self, seconds):
         self.move *= self.friction
+        if self.aiming == "closest":
+            self.aim_at_closest_player()
+        elif self.aiming == "locked 1":
+            self.aim_at_player(1)
+        elif self.aiming == "locked 2":
+            self.aim_at_player(2)
+        elif self.aiming == "locked 3":
+            self.aim_at_player(3)
+
         VectorSprite.update(self, seconds)
         #print(self.move, self.angle)
 
@@ -491,7 +533,7 @@ class Viewer():
         for nr in range(4):
               pic = self.create_picture(color=colors[nr])
               startpos = pygame.math.Vector2(corners[nr][0], corners[nr][1])
-              self.players.append( Player(pos= startpos, picture=pic, color=colors[nr]))
+              self.players.append( Player(playernumber = nr, pos= startpos, picture=pic, color=colors[nr]))
 
         self.run()
 
@@ -563,7 +605,7 @@ class Viewer():
         pygame.display.set_caption("use joysticks or cursor/pgup/pdwn/space")
         # exittime = 0
         while running:
-            print(self.players[0].pos)
+            print(self.players[0].pos, self.players[0].cannon_angle)
             milliseconds = self.clock.tick(self.fps)  #
             seconds = milliseconds / 1000
             self.playtime += seconds
@@ -631,7 +673,9 @@ class Viewer():
                     if y > 0:
                         self.players[number].move_backward(abs(y))
                     # -- control aiming with second stick of joystick
-                    self.players[number].aim(seconds, x2)
+                    # tolerance +- 0.1 from 0 so that unprecise joysticks don't generate movement commands
+                    if x2 < -0.1 or x2 > 0.1:
+                       self.players[number].aim(seconds, x2)
                     #self.players[number].cannon_angle += self.players[number].cannon_turn_speed * seconds * x2
 
 
