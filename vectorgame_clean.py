@@ -340,7 +340,7 @@ class Player(VectorSprite):
         self.stop_on_edge = True
         self.turnspeed = 90 # degrees per second
         self.movespeed = 150 # pixel per second
-        self.friction = 0.99
+        self.friction = 0.8
         self.cannon_angle = 0
         self.firespeed = 150
         #if self.number == 0:
@@ -350,18 +350,19 @@ class Player(VectorSprite):
         #self.victim = None
         self.aiming = "free"  #
         self.reload_time = 0.15 # minimal time between 2 shots
-        self.last_button1 = 0
-        self.button1_wait = 0.35
+        #self.last_button1 = 0
+        #self.button1_wait = 0.35
         self.last_shot = 0 # time of last shot
         self.cannon_turn_speed = 150 # degrees per second
 
         Crosshair(boss=self)
 
     def switch_firemode(self):
-        if self.age < (self.last_button1 + self.button1_wait):
-            return # too soon
+        #if self.age < (self.last_button1 + self.button1_wait):
+        #    return # too soon
         if self.aiming == "free":
             self.aiming = "forward"
+            self.cannon_angle = self.angle
         elif self.aiming == "forward":
             self.aiming = "fixed"
         elif self.aiming == "fixed":
@@ -379,8 +380,14 @@ class Player(VectorSprite):
         a = self.cannon_angle
         Beam(boss=self, pos=p, move=m, color=self.color, angle=a)
 
+    def aim(self, seconds, factor):
+        """turn the cannon/crosshair, depending on aiming mode"""
+        if self.aiming == "free" or self.aiming == "fixed":
+            self.cannon_angle += self.cannon_turn_speed * factor * seconds
+
     def turn_left(self, seconds, factor=1):
         self.turn(seconds, factor, -1)
+
 
     def turn_right(self, seconds, factor=1):
         self.turn(seconds, factor, 1)
@@ -394,7 +401,7 @@ class Player(VectorSprite):
             return
         elif self.aiming == "forward":
             self.cannon_angle = self.angle
-        elif self.aiming == "fix":
+        elif self.aiming == "fixed":
             self.cannon_angle += degrees
         elif self.aiming == "locked":
             victim = Viewer.players[self.victim_number]
@@ -405,13 +412,15 @@ class Player(VectorSprite):
 
 
     def move_forward(self, factor=1):
-        self.move = pygame.math.Vector2(self.movespeed * factor, 0)
-        self.move.rotate_ip(self.angle)
+        m = pygame.math.Vector2(self.movespeed * factor, 0)
+        m.rotate_ip(self.angle)
+        self.move += m
 
     def move_backward(self, factor=1):
         """backward goes only half as fast as forward"""
-        self.move = pygame.math.Vector2(-self.movespeed/2 * factor, 0)
-        self.move.rotate_ip(self.angle)
+        m = pygame.math.Vector2(-self.movespeed/2 * factor, 0)
+        m.rotate_ip(self.angle)
+        self.move += m
 
     def update(self, seconds):
         self.move *= self.friction
@@ -568,6 +577,13 @@ class Viewer():
                         running = False
                     if event.key == pygame.K_SPACE:
                       self.players[0].fire()
+                # --- joy button up --
+                elif event.type == pygame.JOYBUTTONUP:
+                    #print(event) <Event(11-JoyButtonUp {'joy': 0, 'button': 0})>
+                    #switch aiming mode of player of that joystick if first button was released
+                    if event.button == 0:
+                        self.players[event.joy].switch_firemode()
+
 
             # ------------ pressed keys ------
             pressed_keys = pygame.key.get_pressed()
@@ -602,8 +618,8 @@ class Viewer():
                     buttons = j.get_numbuttons()
                     for b in range(buttons):
                         pushed = j.get_button(b)
-                        if b == 0 and pushed:
-                            self.players[number].switch_firemode()
+                        #if b == 0 and pushed:
+                        #    self.players[number].switch_firemode()
 
                     # ----- control 4 players with 4 joysticks
                     if x < 0:
@@ -615,7 +631,8 @@ class Viewer():
                     if y > 0:
                         self.players[number].move_backward(abs(y))
                     # -- control aiming with second stick of joystick
-                    self.players[number].cannon_angle += self.players[number].cannon_turn_speed * seconds * x2
+                    self.players[number].aim(seconds, x2)
+                    #self.players[number].cannon_angle += self.players[number].cannon_turn_speed * seconds * x2
 
 
 
