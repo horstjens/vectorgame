@@ -339,7 +339,7 @@ class Player(VectorSprite):
         self.stop_on_edge = True
         self.turnspeed = 90 # degrees per second
         self.movespeed = 150 # pixel per second
-        self.friction = 0.8
+        self.friction = 0.999
         self.cannon_angle = 0
         self.firespeed = 150
         #if self.number == 0:
@@ -386,7 +386,7 @@ class Player(VectorSprite):
         self.last_shot = self.age
         m = pygame.math.Vector2(self.firespeed, 0)
         m.rotate_ip(self.cannon_angle)
-        m += self.move
+        #m += self.move
         p = pygame.math.Vector2(self.pos.x, self.pos.y)
         a = self.cannon_angle
         Beam(boss=self, pos=p, move=m, color=self.color, angle=a)
@@ -421,13 +421,15 @@ class Player(VectorSprite):
     def move_forward(self, factor=1):
         m = pygame.math.Vector2(self.movespeed * factor, 0)
         m.rotate_ip(self.angle)
-        self.move += m
+        #self.move += m
+        self.move = m
 
     def move_backward(self, factor=1):
         """backward goes only half as fast as forward"""
         m = pygame.math.Vector2(-self.movespeed/2 * factor, 0)
         m.rotate_ip(self.angle)
-        self.move += m
+        #self.move += m
+        self.move = m
 
     def aim_at_player(self, number):
         targets = [p for p in Viewer.players if p != self]
