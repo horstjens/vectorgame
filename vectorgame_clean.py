@@ -9,9 +9,16 @@ import random
 # patterns for player spaceship
 
 
+def create_picture(color=(0, 0, 255), size=35):
+    # create 1 pictures of a spaceship, pointing to right
+    pic = pygame.Surface((size, size))
+    pygame.draw.polygon(pic, color, [(0, 0), (size, size // 2), (0, size), (size // 3, size // 2)])
+    pic.set_colorkey((0, 0, 0))
+    pic.convert_alpha()
+    return pic
+
+
 # generic pygame functions
-
-
 
 def make_text(text="@", font_color=(255, 0, 255), font_size=48, font_name = "mono", bold=True, grid_size=None):
     """returns pygame surface with text and x, y dimensions in pixel
@@ -25,8 +32,10 @@ def make_text(text="@", font_color=(255, 0, 255), font_size=48, font_name = "mon
     mytext = myfont.render(text, True, font_color)
     mytext = mytext.convert_alpha() # pygame surface, use for blitting
     if grid_size is not None:
-        # TODO error handler if grid_size is not a tuple of positive integers
-        mytext = pygame.transform.scale(mytext, grid_size)
+        try:
+            mytext = pygame.transform.scale(mytext, grid_size)
+        except:
+            raise ValueError("grid size must be tuple of positive integers")
         mytext = mytext.convert_alpha()  # pygame surface, use for blitting
         return mytext, (grid_size[0], grid_size[1])
 
@@ -36,7 +45,9 @@ def make_text(text="@", font_color=(255, 0, 255), font_size=48, font_name = "mon
 def write(background, text, x=50, y=150, color=(0, 0, 0),
           font_size=None, font_name="mono", bold=True, origin="topleft"):
     """blit text on a given pygame surface (given as 'background')
-       the origin is the alignement of the text surface
+       the origin is the alignment of the text surface
+       origin can be 'center', 'centercenter', 'topleft', 'topcenter', 'topright', 'centerleft', 'centerright',
+       'bottomleft', 'bottomcenter', 'bottomright'
     """
     if font_size is None:
         font_size = 24
@@ -310,7 +321,10 @@ class Beam(VectorSprite):
         self.kill_on_edge = True
         self._layer = 7
         self.max_age = 5
+        self.max_distance = 400
         self.damage = 1
+        self.radius = 5
+        self.hitpoints = 1
 
 
     def create_image(self):
@@ -342,12 +356,13 @@ class Player(VectorSprite):
         self.friction = 0.999
         self.cannon_angle = 0
         self.firespeed = 150
+        self.radius = 17
         #if self.number == 0:
         #    self.aiming = "locked"
         #    self.victim_number = 1
         #else:
         #self.victim = None
-        self.aiming = "free"  #
+        self.aiming = "closest"  #
         self.reload_time = 0.15 # minimal time between 2 shots
         #self.last_button1 = 0
         #self.button1_wait = 0.35
@@ -366,7 +381,7 @@ class Player(VectorSprite):
             self.aiming = "fixed"
         elif self.aiming == "fixed":
             self.aiming = "closest"
-            self.aim_at_closest_player()
+            self.aim_at_player(None)
         elif self.aiming == "closest":
             self.aiming = "locked 1"
             self.aim_at_player(1)
@@ -431,36 +446,37 @@ class Player(VectorSprite):
         #self.move += m
         self.move = m
 
-    def aim_at_player(self, number):
-        targets = [p for p in Viewer.players if p != self]
-        best = targets[number-1]
+    def aim_at_player(self, number=None):
+        """aims at player number or if number is None, aims at closest player"""
+        targets = [p for p in Viewer.players if p != self and p.hitpoints > 0]
+        if len(targets) == 0:
+            return
+        if number is None:
+             best = self.get_closest_player(targets)
+        elif number > len(targets) :
+            return
+        else:
+             best = targets[number-1]
         v = best.pos - self.pos
         a = -v.angle_to(pygame.math.Vector2(1, 0))
         self.cannon_angle = a
 
-    def aim_at_closest_player(self):
-        targets = [p for p in Viewer.players if p != self]
+    def get_closest_player(self, targets):
         best_distance = None
-        #best = None
+        # best = None
         for p in targets:
             dist = (p.pos - self.pos).length()
             if best_distance is None or best_distance > dist:
                 best_distance = dist
                 best = p
-        v =   best.pos - self.pos
-        a = -v.angle_to(pygame.math.Vector2(1,0))
-        self.cannon_angle = a
-        #if self.playernumber== 0:
-        #    print(best_distance, best, v, a)
+        return best
 
-
-
-
-
+    # TODO : aiming update when one player is killed
+    # TODO: aimingmode reducing when less then 4 players alive
     def update(self, seconds):
         self.move *= self.friction
         if self.aiming == "closest":
-            self.aim_at_closest_player()
+            self.aim_at_player(None)
         elif self.aiming == "locked 1":
             self.aim_at_player(1)
         elif self.aiming == "locked 2":
@@ -533,19 +549,12 @@ class Viewer():
         corners = [(100,100), (Viewer.width-100,100), (100, Viewer.height-100), (Viewer.width-100, Viewer.height-100)]
         colors = [(0,0,222), (0,222,0), (222,0,0), (222,222,0)]
         for nr in range(4):
-              pic = self.create_picture(color=colors[nr])
+              pic = create_picture(color=colors[nr])
               startpos = pygame.math.Vector2(corners[nr][0], corners[nr][1])
               self.players.append( Player(playernumber = nr, pos= startpos, picture=pic, color=colors[nr]))
 
+        
         self.run()
-
-    def create_picture(self, color=(0,0,255), size=35):
-        # create 1 pictures of a spaceship, pointing to right
-        pic = pygame.Surface((size, size))
-        pygame.draw.polygon(pic, color, [(0,0), (size,size//2), (0, size), (size//3,size//2)])
-        pic.set_colorkey((0,0,0))
-        pic.convert_alpha()
-        return pic
 
 
     def make_background(self):
@@ -685,13 +694,6 @@ class Viewer():
             # permanent fire for all players
             for nr, player in enumerate(self.players):
                 player.fire()
-                #m = pygame.math.Vector2(player.firespeed, 0)
-                #m.rotate_ip(player.cannon_angle)
-                #m += player.move
-                #p = pygame.math.Vector2(player.pos.x, player.pos.y)
-                #a = player.cannon_angle
-                #Beam(boss=player, pos=p, move=m, color=player.color, angle=a)
-
 
 
 
@@ -707,13 +709,14 @@ class Viewer():
             self.allgroup.update(seconds)
 
             # --------- collision detection between target and Explosion -----
-            # for e in self.explosiongroup:
-            #    crashgroup = pygame.sprite.spritecollide(e, self.targetgroup,
-            #                 False, pygame.sprite.collide_circle)
-            #    for t in crashgroup:
-            #        t.hitpoints -= e.damage
-            #        if random.random() < 0.5:
-            #            Fire(pos = t.pos, max_age=3, bossnumber=t.number)
+            for player  in self.playergroup:
+                crashgroup = pygame.sprite.spritecollide(player, self.bulletgroup,
+                             False, pygame.sprite.collide_circle) # need 'radius' attribute for both sprites
+                for beam in crashgroup:
+                    if beam.boss == player:
+                        continue
+                    player.hitpoints -= beam.damage
+                    beam.hitpoints = 0 # kill later
 
             # ----------- clear, draw , update, flip -----------------
             self.allgroup.draw(self.screen)
