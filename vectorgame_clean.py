@@ -1,10 +1,12 @@
 """2d vector game in pure python3 / pygame, no external files necessary.
-   create beautiul patterns by steering your spaceships with keyboard or
+   create beautiful patterns by steering your spaceships with keyboard or
    joysticks (joysticks recommended. 4 players maximum"""
 
 import pygame
 import random
 
+#TODO: transform Flytext into VectorSprite
+#TODO: more effect for jyostick-axis, bigger factor
 
 # patterns for player spaceship
 
@@ -405,25 +407,9 @@ class Player(VectorSprite):
         else:
             self.aiming = self.aimings[i+1]
 
-        #if self.aiming == "free":
-        #    self.aiming = "forward"
-        #    self.cannon_angle = self.angle
-        #elif self.aiming == "forward":
-        #    self.aiming = "fixed"
-        #elif self.aiming == "fixed":
-        #    self.aiming = "closest"
-        #    self.aim_at_player(None)
-        #elif self.aiming == "closest":
-        #    self.aiming = "locked 1"
-        #    self.aim_at_player(1)
-        #elif self.aiming == "locked 1":
-        #    self.aiming = "locked 2"
-        #    self.aim_at_player(2)
-        #elif self.aiming == "locked 2":
-        #    self.aiming = "locked 3"
-        #    self.aim_at_player(3)
-        #elif self.aiming == "locked 3":
-        #    self.aiming = "free"
+        # instantly re-aim when set to 'forward', don't wait for turn:
+        if self.aiming == "forward":
+            self.cannon_angle = self.angle
 
 
     def fire(self):
