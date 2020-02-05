@@ -5,11 +5,7 @@
 import pygame
 import random
 
-#TODO: transform Flytext into VectorSprite
-#TODO: more effect for jyostick-axis, bigger factor
-
 # patterns for player spaceship
-
 
 def create_picture(color=(0, 0, 255), size=35):
     # create 1 pictures of a spaceship, pointing to right
@@ -19,6 +15,9 @@ def create_picture(color=(0, 0, 255), size=35):
     pic.convert_alpha()
     return pic
 
+def validcolor(colorvalue):
+    """makes sure a value remains between 0 and 255"""
+    return 0 if colorvalue < 0 else 255 if colorvalue > 255 else colorvalue
 
 # generic pygame functions
 
@@ -42,8 +41,6 @@ def make_text(text="@", font_color=(255, 0, 255), font_size=48, font_name = "mon
         return mytext, (grid_size[0], grid_size[1])
 
     return mytext, (size_x, size_y)
-
-
 
 
 def write(background, text, x=50, y=150, color=(0, 0, 0),
@@ -77,10 +74,6 @@ def write(background, text, x=50, y=150, color=(0, 0, 0),
         background.blit(surface, (x - width // 2, y ))
     elif origin == "bottomright":
         background.blit(surface, (x - width, y - height))
-
-
-
-
 
 
 class VectorSprite(pygame.sprite.Sprite):
@@ -144,9 +137,10 @@ class VectorSprite(pygame.sprite.Sprite):
         if "warp_on_edge" not in kwargs:
             self.warp_on_edge = False
         if "age" not in kwargs:
-            self.age = 0  # age in seconds
+            self.age = 0  # age in seconds. A negative age means waiting time until sprite appears
         if "max_age" not in kwargs:
             self.max_age = None
+
         if "max_distance" not in kwargs:
             self.max_distance = None
         if "picture" not in kwargs:
@@ -157,7 +151,6 @@ class VectorSprite(pygame.sprite.Sprite):
             self.kill_with_boss = False
         if "move_with_boss" not in kwargs:
             self.move_with_boss = False
-
 
 
     def kill(self):
@@ -209,6 +202,8 @@ class VectorSprite(pygame.sprite.Sprite):
     def update(self, seconds):
         """calculate movement, position and bouncing on edge"""
         self.age += seconds
+        if self.age < 0:
+            return
         self.distance_traveled += self.move.length() * seconds
         # ----- kill because... ------
         if self.hitpoints <= 0:
@@ -277,38 +272,68 @@ class VectorSprite(pygame.sprite.Sprite):
                 self.pos.y = 0
 
 
-
-class Flytext(pygame.sprite.Sprite):
+class Flytext(VectorSprite):
     """a text flying for a short time around, like hitpoints lost message"""
-    def __init__(self, x, y, text="hallo", color=(255, 0, 0),
-                 dx=0, dy=-50, duration=2, acceleration_factor = 1.0, delay = 0, fontsize=22):
+    def __init__(self, pos=pygame.math.Vector2(50,50), move=pygame.math.Vector2(0,-50),
+                  text="hallo", color=(255, 0, 0), max_age=2, age=0,
+                 acceleration_factor = 1.0,  fontsize=22,):
         """a text flying upward and for a short time and disappearing"""
+        VectorSprite.__init__(self, pos=pos, move=move, text=text, color=color,
+                              max_age=max_age, age=age, acceleration_factor=acceleration_factor,
+                              fontsize=fontsize)
         self._layer = 7  # order of sprite layers (before / behind other sprites)
-        pygame.sprite.Sprite.__init__(self, self.groups)  # THIS LINE IS IMPORTANT !!
-        self.text = text
-        self.r, self.g, self.b = color[0], color[1], color[2]
-        self.dx = dx
-        self.dy = dy
-        self.x, self.y = x, y
-        self.duration = duration  # duration of flight in seconds
-        self.acc = acceleration_factor  # if < 1, Text moves slower. if > 1, text moves faster.
-        self.image = make_text(self.text, (self.r, self.g, self.b), fontsize)[0]  # font 22
+
+        #acceleration_factor  # if < 1, Text moves slower. if > 1, text moves faster.
+
+    def create_image(self):
+        self.image = make_text(self.text, (self.color), self.fontsize)[0]  # font 22
         self.rect = self.image.get_rect()
-        self.rect.center = (self.x, self.y)
-        self.time = 0 - delay
+        self.rect.center = (-400,-400) # if you leave this out the Flytext is stuck in the left upper corner at 0,0
+
+
+        #self.rect.center = (self.pos.x, self.pos.y)
 
     def update(self, seconds):
-        self.time += seconds
-        if self.time < 0:
-            self.rect.center = (-100,-100)
+        self.move *= self.acceleration_factor
+        VectorSprite.update(self, seconds)
+
+class Bubble(VectorSprite):
+    """a round fragment or bubble particle"""
+
+
+    def _overwrite_parameters(self):
+        self.speed = random.randint(10,50)
+        self.max_age = 2+random.random()*2.4
+        self.kill_on_edge = True
+        self.kill_with_boss = False # VERY IMPORTANT!!!
+        if self.boss and self.move == pygame.math.Vector2(0,0):
+            self.move = pygame.math.Vector2(self.boss.move.x, self.boss.move.y)
+            self.move.normalize_ip()
+            self.move *= self.speed
+            a, b = 160, 200
         else:
-            self.y += self.dy * seconds
-            self.x += self.dx * seconds
-            self.dy *= self.acc  # slower and slower
-            self.dx *= self.acc
-            self.rect.center = (self.x, self.y)
-            if self.time > self.duration:
-                self.kill()      # remove Sprite from screen and from groups
+            a, b = 0, 360
+            self.move = pygame.math.Vector2(self.speed, 0)
+        self.move.rotate_ip(random.randint(a,b))
+        print("ich bin da", self.pos, self.move)
+
+
+    def create_image(self):
+        self.radius = random.randint(1,5)
+        self.image = pygame.Surface((2*self.radius, 2*self.radius))
+        r,g,b = self.color
+        r+= random.randint(-30,30)
+        g+= random.randint(-30,30)
+        b+= random.randint(-30,30)
+        r = validcolor(r)
+        g = validcolor(g)
+        b = validcolor(b)
+        self.color = (r,g,b)
+        pygame.draw.circle(self.image, self.color, (self.radius, self.radius), self.radius )
+        self.image.set_colorkey((0,0,0))
+        self.image.convert_alpha()
+        self.rect = self.image.get_rect()
+
 
 
 class Beam(VectorSprite):
@@ -337,11 +362,6 @@ class Beam(VectorSprite):
         self.set_angle(self.angle)
 
 
-
-
-
-
-
 class Player(VectorSprite):
 
     aimings = ["free", "forward", "fixed", "locked"]
@@ -351,7 +371,7 @@ class Player(VectorSprite):
         self.hitpointsfull = 100
         self.stop_on_edge = True
         self.turnspeed = 90 # degrees per second
-        self.movespeed = 150 # pixel per second
+        self.movespeed = 100 # pixel per second
         self.friction = 0.999
         self.cannon_angle = 0
         self.firespeed = 150
@@ -377,13 +397,16 @@ class Player(VectorSprite):
             return
         """select the next target out of the self.targets list
         that looks like ['nearest', 'green', 'red', 'yellow']"""
+
+        if self.target not in self.targets:
+            self.target = self.targets[0]
+            return
         i = self.targets.index(self.target)
         if i == len(self.targets)-1:
             self.target = self.targets[0]
         else:
             self.target = self.targets[i+1]
         #print("target is now:", self.target)
-
 
 
     def switch_aiming(self):
@@ -443,9 +466,6 @@ class Player(VectorSprite):
         elif self.aiming == "fixed":
             self.cannon_angle += degrees
 
-
-
-
     def move_forward(self, factor=1):
         if self.hitpoints <= 0:
             return
@@ -504,8 +524,8 @@ class Player(VectorSprite):
         # remove own name from Player.targets and update all players
         for p in Viewer.playergroup:
             p.valid_targets()
-        Flytext(x=self.pos.x, y=self.pos.y, text="Game over for {} player ".format(self.name),
-                color=self.color, duration=4  )
+        Flytext(pos=pygame.math.Vector2(self.pos.x, self.pos.y), text="Game over for {} player ".format(self.name),
+                color=self.color, max_age=1  )
         ## don't kill because this would mess up joystick control.
         ## instead, just move the dead player out of the screen
         self.stop_on_edge = False
@@ -515,9 +535,10 @@ class Player(VectorSprite):
         ##VectorSprite.kill(self)
         survivors = [p for p in Viewer.playergroup if p.hitpoints > 0]
         if len(survivors) == 1:
-            Flytext(x=Viewer.width//2, y=Viewer.height -50, color=survivors[0].color,
-                    duration=10, fontsize=33, text="Victory for {} player!".format(survivors[0].name))
-            Flytext(x=Viewer.width, y=100, text="press r to restart the game", dy=0,dx=-5, duration=30)
+            Flytext(pos=pygame.math.Vector2(Viewer.width//2, Viewer.height -50), color=survivors[0].color,
+                    max_age=10, fontsize=33, text="Victory for {} player!".format(survivors[0].name))
+            Flytext(pos=pygame.math.Vector2(Viewer.width, 100), text="press r to restart the game",
+                    move=pygame.math.Vector2(-5,0), max_age=30)
 
     # DONE : aiming update when one player is killed
     # DONE: aimingmode reducing when less then 4 players alive
@@ -539,12 +560,12 @@ class Crosshair(VectorSprite):
 
     def create_image(self):
         self.image = pygame.Surface((30,30))
-        pygame.draw.line(self.image, (200,0,0), (0,0), (30,30),1)
-        pygame.draw.line(self.image, (200, 0, 0), (30, 0), (0, 30), 1)
-        pygame.draw.circle(self.image, (150,0,0), (15,15), 15, 1)
-        pygame.draw.circle(self.image, (150, 0, 0), (15, 15), 10, 1)
-        pygame.draw.circle(self.image, (150, 0, 0), (15, 15), 5, 1)
-        pygame.draw.circle(self.image, (0, 0, 0), (15, 15), 2, 0)
+        pygame.draw.line(self.image, self.boss.color, (0,0), (30,30),1)
+        pygame.draw.line(self.image, self.boss.color, (30, 0), (0, 30), 1)
+        pygame.draw.circle(self.image, (10,10,10), (15,15), 15, 1)
+        pygame.draw.circle(self.image, self.boss.color, (15, 15), 10, 1)
+        pygame.draw.circle(self.image, (10, 10, 10), (15, 15), 5, 1)
+        pygame.draw.circle(self.image, (0, 0, 0), (15, 15), 2, 0)  # black -> transparent. makes a hole
         self.image.set_colorkey((0,0,0))
         self.image.convert_alpha()
         self.rect = self.image.get_rect()
@@ -557,11 +578,6 @@ class Crosshair(VectorSprite):
         self.boss_distance.rotate_ip(self.boss.cannon_angle)
         self.pos = self.boss.pos + self.boss_distance
         VectorSprite.update(self,seconds)
-
-
-
-
-
 
 class Viewer():
     width = 0
@@ -638,7 +654,8 @@ class Viewer():
         Player.groups = self.allgroup, self.playergroup
         Beam.groups = self.allgroup, self.bulletgroup
         VectorSprite.groups = self.allgroup
-        Flytext.groups = self.allgroup
+        Bubble.groups = self.allgroup
+        #Flytext.groups = self.allgroup
         #Explosion.groups = self.allgroup, self.explosiongroup
 
 
@@ -665,8 +682,7 @@ class Viewer():
         #pygame.mouse.set_visible(False)
         oldleft, oldmiddle, oldright = False, False, False
         pygame.display.set_caption("use 4 joysticks for 4 players.Change aimingmode and target with buttons")
-        # exittime = 0
-        Flytext(x=Viewer.width//2, y=Viewer.height//2, text="player 1 keys: cursor, home/end, pgup/pgdown")
+        Flytext(pos=pygame.math.Vector2(Viewer.width//2,Viewer.height//2), text="player 1 keys: cursor, home/end, pgup/pgdown")
         while running:
             #print(self.playergroup[0].pos, self.playergroup[0].cannon_angle)
             milliseconds = self.clock.tick(self.fps)  #
@@ -687,6 +703,9 @@ class Viewer():
                         self.playergroup.sprites()[0].switch_aiming()
                     if event.key == pygame.K_END:
                         self.playergroup.sprites()[0].switch_target()
+                    #--test
+                    if event.key == pygame.K_x:
+                        Bubble(pos=pygame.math.Vector2(400,200))
                     # ---- restart and reset all players -----
                     if event.key == pygame.K_r:
                         #for nr, p in enumerate(Viewer.playergroup.sprites()):
@@ -700,7 +719,6 @@ class Viewer():
                             p.stop_on_edge = True
                             p.pos = pygame.math.Vector2(self.corners[nr][0],self.corners[nr][1])
 
-
                 # --- joy button up --
                 elif event.type == pygame.JOYBUTTONUP:
                     #print(event) <Event(11-JoyButtonUp {'joy': 0, 'button': 0})>
@@ -711,20 +729,9 @@ class Viewer():
                         self.playergroup.sprites()[event.joy].switch_target()
 
                 #elif event.type == pygame.JOYBUTTONDOWN:
-                #    event.type == pygame.J
-                #    # button 4 and 5 rotate cannon/crosshair of player
-                #    if event.button == 4:  # 4,5  6,7
-                #        self.playergroup.sprites()[event.joy].aim(seconds, -1)
-                #    if event.button == 5:  # 4,5  6,7
-                #        self.playergroup.sprites()[event.joy].aim(seconds, 1)
-
-
-
 
             # ------------ pressed keys ------
             pressed_keys = pygame.key.get_pressed()
-            # if pressed_keys[pygame.K_SPACE]:
-            #    pass
             if pressed_keys[pygame.K_RIGHT]:
                 self.playergroup.sprites()[0].turn_right(seconds)
                 # self.playergroup.sprites()[0] is player1
@@ -776,31 +783,18 @@ class Viewer():
                     if y2 > 0:
                         self.playergroup.sprites()[number].move_backward(abs(y2))
                     # -- control aiming with second stick of joystick
-                    # tolerance +- 0.1 from 0 so that unprecise joysticks don't generate movement commands
-
-                    #if x2 < -0.1 or x2 > 0.1:
-                    #   self.playergroup.sprites()[number].aim(seconds, x2)
-                    #self.playergroup[number].cannon_angle += self.playergroup[number].cannon_turn_speed * seconds * x2
-                    # DONE: better joystick design: speed+-, turn, move-crosshair, switch aiming, next_target
-
 
             # permanent fire for all players
             for p in self.playergroup:
                 p.fire()
 
-
             # -------------------------delete everything on screen--------------------------------------
             self.screen.blit(self.background, (0, 0))
-            # --- order of drawing (back to front) ---
 
-            # write text below sprites
-            fps_text = "FPS: {:8.3}".format(self.clock.get_fps())
-            write(self.screen, text=fps_text, origin="bottomright", x=Viewer.width - 5, y=Viewer.height - 5,
-                  font_size=18, color=(200, 40, 40))
-
+            # ---- update -----------------
             self.allgroup.update(seconds)
 
-            # --------- collision detection between target and Explosion -----
+            # --------- collision detection between Player and Beam -----
             for player  in self.playergroup:
                 crashgroup = pygame.sprite.spritecollide(player, self.bulletgroup,
                              False, pygame.sprite.collide_circle) # need 'radius' attribute for both sprites
@@ -808,10 +802,23 @@ class Viewer():
                     if beam.boss == player:
                         continue
                     player.hitpoints -= beam.damage
-                    beam.hitpoints = 0 # kill later
-
-            # ----------- clear, draw , update, flip -----------------
+                    # explosion with bubbels
+                    if random.random() < 0.85:
+                        v = pygame.math.Vector2(beam.move.x, beam.move.y)
+                        v.normalize_ip()
+                        v *= random.randint(60,160) # speed
+                        v.rotate_ip(beam.angle + 180 + random.randint(-20,20))
+                        Bubble(pos=pygame.math.Vector2(beam.pos.x, beam.pos.y), color=beam.color,
+                               move=v)
+                    beam.kill()
+                    #beam.hitpoints = 0 # kill later
+            # ----------- draw  -----------------
             self.allgroup.draw(self.screen)
+            # write text below sprites
+            fps_text = "FPS: {:8.3}".format(self.clock.get_fps())
+            write(self.screen, text=fps_text, origin="bottomright", x=Viewer.width - 5, y=Viewer.height - 5,
+                  font_size=18, color=(200, 40, 40))
+            # ----- hud ----
             self.hud()
             # -------- next frame -------------
             pygame.display.flip()
