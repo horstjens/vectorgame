@@ -115,12 +115,12 @@ class VectorSprite(pygame.sprite.Sprite):
             self.layer = 0
         else:
             self.layer = self.layer
-        if "static" not in kwargs:
-            self.static = False
         if "pos" not in kwargs:
             self.pos = pygame.math.Vector2(random.randint(0, Viewer.width),50)
         if "move" not in kwargs:
             self.move = pygame.math.Vector2(0,0)
+        if "angle" not in kwargs:
+            self.angle = 0 # facing right?
         if "radius" not in kwargs:
             self.radius = 5
         if "width" not in kwargs:
@@ -133,18 +133,18 @@ class VectorSprite(pygame.sprite.Sprite):
         if "hitpoints" not in kwargs:
             self.hitpoints = 100
         self.hitpointsfull = self.hitpoints # makes a copy
-        if "mass" not in kwargs:
-            self.mass = 10
-        if "damage" not in kwargs:
-            self.damage = 10
+
+
         if "stop_on_edge" not in kwargs:
             self.stop_on_edge = False
         if "bounce_on_edge" not in kwargs:
             self.bounce_on_edge = False
         if "kill_on_edge" not in kwargs:
             self.kill_on_edge = False
-        if "angle" not in kwargs:
-            self.angle = 0 # facing right?
+        if "warp_on_edge" not in kwargs:
+            self.warp_on_edge = False
+        if "age" not in kwargs:
+            self.age = 0  # age in seconds
         if "max_age" not in kwargs:
             self.max_age = None
         if "max_distance" not in kwargs:
@@ -157,22 +157,8 @@ class VectorSprite(pygame.sprite.Sprite):
             self.kill_with_boss = False
         if "move_with_boss" not in kwargs:
             self.move_with_boss = False
-        if "mass" not in kwargs:
-            self.mass = 15
-        if "upkey" not in kwargs:
-            self.upkey = None
-        if "downkey" not in kwargs:
-            self.downkey = None
-        if "rightkey" not in kwargs:
-            self.rightkey = None
-        if "leftkey" not in kwargs:
-            self.leftkey = None
-        if "speed" not in kwargs:
-            self.speed = None
-        if "age" not in kwargs:
-            self.age = 0 # age in seconds
-        if "warp_on_edge" not in kwargs:
-            self.warp_on_edge = False
+
+
 
     def kill(self):
         # check if this is a boss and kill all his underlings as well
@@ -361,8 +347,8 @@ class Player(VectorSprite):
     aimings = ["free", "forward", "fixed", "locked"]
 
     def _overwrite_parameters(self):
-        self.hitpoints = 500
-        self.hitpointsfull = 500
+        self.hitpoints = 100
+        self.hitpointsfull = 100
         self.stop_on_edge = True
         self.turnspeed = 90 # degrees per second
         self.movespeed = 150 # pixel per second
@@ -387,6 +373,8 @@ class Player(VectorSprite):
         Crosshair(boss=self)
 
     def switch_target(self):
+        if self.hitpoints <= 0:
+            return
         """select the next target out of the self.targets list
         that looks like ['nearest', 'green', 'red', 'yellow']"""
         i = self.targets.index(self.target)
@@ -399,6 +387,8 @@ class Player(VectorSprite):
 
 
     def switch_aiming(self):
+        if self.hitpoints <= 0:
+            return
         """change the aimingmode to the next string in self.aimings
            aimings = ["free", "forward", "fixed", "locked"] """
         i = self.aimings.index(self.aiming)
@@ -413,6 +403,8 @@ class Player(VectorSprite):
 
 
     def fire(self):
+        if self.hitpoints <= 0:
+            return
         if self.age < (self.last_shot + self.reload_time):
             return # gun is too hot now, wait for cooldown
         self.last_shot = self.age
@@ -425,6 +417,8 @@ class Player(VectorSprite):
 
     def aim(self, seconds, factor):
         """turn the cannon/crosshair, depending on aiming mode"""
+        if self.hitpoints <= 0:
+            return
         if self.aiming == "free" or self.aiming == "fixed":
             self.cannon_angle += self.cannon_turn_speed * factor * seconds
 
@@ -437,6 +431,8 @@ class Player(VectorSprite):
 
     def turn(self, seconds, factor, clockwise=1 ):
         """clockwise can be 1 or -1 (=counter-clockwise)"""
+        if self.hitpoints <= 0:
+            return
         degrees = self.turnspeed * factor * seconds * clockwise
         self.rotate(degrees)
         # rotate the crosshair as well?
@@ -451,12 +447,16 @@ class Player(VectorSprite):
 
 
     def move_forward(self, factor=1):
+        if self.hitpoints <= 0:
+            return
         m = pygame.math.Vector2(self.movespeed * factor, 0)
         m.rotate_ip(self.angle)
         #self.move += m
         self.move = m
 
     def move_backward(self, factor=1):
+        if self.hitpoints <= 0:
+            return
         """backward goes only half as fast as forward"""
         m = pygame.math.Vector2(-self.movespeed/2 * factor, 0)
         m.rotate_ip(self.angle)
@@ -467,6 +467,8 @@ class Player(VectorSprite):
         """aims at player whose name matches the colorstring,
            or 'nearest'
            like: 'blue', 'yellow', 'red', 'green'"""
+        if self.hitpoints <= 0:
+            return
         if colorstring is None:
             return
         if colorstring == "nearest":
@@ -502,11 +504,26 @@ class Player(VectorSprite):
         # remove own name from Player.targets and update all players
         for p in Viewer.playergroup:
             p.valid_targets()
-        VectorSprite.kill(self)
+        Flytext(x=self.pos.x, y=self.pos.y, text="Game over for {} player ".format(self.name),
+                color=self.color, duration=4  )
+        ## don't kill because this would mess up joystick control.
+        ## instead, just move the dead player out of the screen
+        self.stop_on_edge = False
+        self.pos = pygame.math.Vector2(-200,-200)
+        self.move = pygame.math.Vector2(0,0)
+        #self.rect.center = (round(self.pos.x, 0), round(self.pos.y, 0))
+        ##VectorSprite.kill(self)
+        survivors = [p for p in Viewer.playergroup if p.hitpoints > 0]
+        if len(survivors) == 1:
+            Flytext(x=Viewer.width//2, y=Viewer.height -50, color=survivors[0].color,
+                    duration=10, fontsize=33, text="Victory for {} player!".format(survivors[0].name))
+            Flytext(x=Viewer.width, y=100, text="press r to restart the game", dy=0,dx=-5, duration=30)
 
     # DONE : aiming update when one player is killed
     # DONE: aimingmode reducing when less then 4 players alive
     def update(self, seconds):
+        #if self.hitpoints <= 0:
+        #    return
         self.move *= self.friction
         if self.aiming == "locked":
             self.aim_at_player(self.target)
@@ -574,12 +591,12 @@ class Viewer():
         self.prepare_sprites()
         #Viewer.players = []
         # --- create 4 player sprites. They will automatically be members of Viewer.playergroup ---
-        corners = [(100,100), (Viewer.width-100,100), (100, Viewer.height-100), (Viewer.width-100, Viewer.height-100)]
+        self.corners = [(100,100), (Viewer.width-100,100), (100, Viewer.height-100), (Viewer.width-100, Viewer.height-100)]
         colors =  [(128,128,255), (0,255,0),              (255,0,0),                (255,255,0)]
         names =   ["blue",    "green",                "red",                    "yellow"]
         for nr in range(4):
               pic = create_picture(color=colors[nr])
-              startpos = pygame.math.Vector2(corners[nr][0], corners[nr][1])
+              startpos = pygame.math.Vector2(self.corners[nr][0], self.corners[nr][1])
               Player(playernumber = nr, pos= startpos, picture=pic, color=colors[nr], name=names[nr])
 
         for p in Viewer.playergroup:
@@ -635,7 +652,10 @@ class Viewer():
             length = Viewer.width // 4
             pygame.draw.rect(self.screen, p.color, (nr * length +1 , 1 , int(length * percent)-2, y-1), 0) # fill
             pygame.draw.rect(self.screen, (0, 0, 0), (nr * length, 0, length, y), 1)  # black border
-            t = p.aiming + ("  (" if p.aiming != "locked" else " --> ") + p.target + (")" if p.aiming != "locked" else "")
+            if p.hitpoints <= 0:
+                t = "Game Over"
+            else:
+                t = p.aiming + ("  (" if p.aiming != "locked" else " --> ") + p.target + (")" if p.aiming != "locked" else "")
             write(background=self.screen, text=t, x= nr*length + 50, y=5,
                   color=(0,0,0), bold=True, font_size=10)
 
@@ -667,6 +687,20 @@ class Viewer():
                         self.playergroup.sprites()[0].switch_aiming()
                     if event.key == pygame.K_END:
                         self.playergroup.sprites()[0].switch_target()
+                    # ---- restart and reset all players -----
+                    if event.key == pygame.K_r:
+                        #for nr, p in enumerate(Viewer.playergroup.sprites()):
+                        for nr, p in enumerate(Viewer.playergroup):
+                            p.hitpoints = p.hitpointsfull
+                            p.set_angle(0)
+                            p.cannon_angle = 0
+                            p.aiming = "free"
+                            p.target = "nearest"
+                            p.move = pygame.math.Vector2(0,0)
+                            p.stop_on_edge = True
+                            p.pos = pygame.math.Vector2(self.corners[nr][0],self.corners[nr][1])
+
+
                 # --- joy button up --
                 elif event.type == pygame.JOYBUTTONUP:
                     #print(event) <Event(11-JoyButtonUp {'joy': 0, 'button': 0})>
@@ -726,9 +760,9 @@ class Viewer():
                         pushed = j.get_button(b)
                         # rotate cannon/crosshair while buttons are pressed down
                         # (for single button press (and relase), use events
-                        if b == 4 and pushed:
+                        if pushed and (b == 4 or b == 3):
                             self.playergroup.sprites()[number].aim(seconds, -1)
-                        if b == 5 and pushed:
+                        if pushed and (b == 5 or b== 2):
                             self.playergroup.sprites()[number].aim(seconds, 1)
                         #    self.playergroup[number].switch_aiming()
 
@@ -751,12 +785,11 @@ class Viewer():
 
 
             # permanent fire for all players
-            for nr, player in enumerate(self.playergroup):
-                player.fire()
+            for p in self.playergroup:
+                p.fire()
 
 
-
-            # delete everything on screen
+            # -------------------------delete everything on screen--------------------------------------
             self.screen.blit(self.background, (0, 0))
             # --- order of drawing (back to front) ---
 
